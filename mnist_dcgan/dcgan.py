@@ -69,13 +69,39 @@ class Discriminator(nn.Module):
             nn.Conv2d(ndf * 4, 1, 4, 2, 1, bias=False),
             nn.Sigmoid()
         )
-
     def forward(self, input):
         if input.is_cuda and self.ngpu > 1:
             output = nn.parallel.data_parallel(self.main, input, range(self.ngpu))
         else:
             output = self.main(input)
         return output.view(-1, 1).squeeze(1)
+
+
+class FeatureExtractor(nn.Module):
+    def __init__(self, ngpu, nc=1, ndf=64):
+        super(FeatureExtractor, self).__init__()
+        self.ngpu = ngpu
+        self.main = nn.Sequential(
+            # input is (nc) x 64 x 64
+            nn.Conv2d(nc, ndf, 4, 2, 1, bias=False),
+            nn.LeakyReLU(0.2, inplace=True),
+            # state size. (ndf) x 32 x 32
+            nn.Conv2d(ndf, ndf * 2, 4, 2, 1, bias=False),
+            nn.BatchNorm2d(ndf * 2),
+            nn.LeakyReLU(0.2, inplace=True),
+            # state size. (ndf*2) x 16 x 16
+            nn.Conv2d(ndf * 2, ndf * 4, 4, 2, 1, bias=False),
+            nn.BatchNorm2d(ndf * 4),
+            nn.LeakyReLU(0.2, inplace=True)
+        )
+        
+    def forward(self, input):
+        if input.is_cuda and self.ngpu > 1:
+            output = nn.parallel.data_parallel(self.main, input, range(self.ngpu))
+        else:
+            output = self.main(input)
+        return output
+
     
 if __name__ == '__main__':    
 
@@ -151,12 +177,17 @@ if __name__ == '__main__':
         netG.load_state_dict(torch.load(opt.netG))
     print(netG)
 
-
-
     netD = Discriminator(ngpu).to(device)
     netD.apply(weights_init)
     if opt.netD != '':
         netD.load_state_dict(torch.load(opt.netD))
+    print(netD)
+
+    
+    netF = FeatureExtractor(ngpu).to(device)
+    netF.apply(weights_init)
+    if opt.netF != '':
+        netD.load_state_dict(torch.load(opt.netD), strict=False)
     print(netD)
 
     criterion = nn.BCELoss()
